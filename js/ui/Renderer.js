@@ -14,22 +14,58 @@ const STATUS_LABEL = {
 };
 
 export function renderPacketTrack(trackEl, packets, { selectedSeq, onSelect }) {
-  trackEl.innerHTML = '';
+  const existing = new Map();
+
+  // Guardar los botones que ya existen
+  trackEl.querySelectorAll('.packet').forEach((el) => {
+    existing.set(Number(el.dataset.seq), el);
+  });
+
   packets.forEach((p) => {
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = `packet packet--${p.status}` + (p.seq === selectedSeq ? ' is-selected' : '');
+    let el = existing.get(p.seq);
+
+    // Si el paquete todavía no existe, crearlo
+    if (!el) {
+      el = document.createElement('button');
+      el.type = 'button';
+      el.dataset.seq = p.seq;
+
+      el.addEventListener('click', () => {
+        onSelect(p.seq);
+      });
+
+      trackEl.appendChild(el);
+    }
+
+    // Actualizar solamente lo necesario
+    el.className =
+      `packet packet--${p.status}` +
+      (p.seq === selectedSeq ? ' is-selected' : '');
+
     el.textContent = p.seq;
     el.title = `Packet ${p.seq} — ${STATUS_LABEL[p.status] || p.status}`;
+
+    // Actualizar badge de intentos
+    const oldBadge = el.querySelector('.packet__badge');
+
     if (p.attempts > 1) {
-      const badge = document.createElement('span');
+      const badge = oldBadge || document.createElement('span');
+
       badge.className = 'packet__badge';
       badge.textContent = `×${p.attempts}`;
-      el.appendChild(badge);
+
+      if (!oldBadge) {
+        el.appendChild(badge);
+      }
+    } else if (oldBadge) {
+      oldBadge.remove();
     }
-    el.addEventListener('click', () => onSelect(p.seq));
-    trackEl.appendChild(el);
+
+    existing.delete(p.seq);
   });
+
+  // Eliminar paquetes que ya no existen
+  existing.forEach((el) => el.remove());
 }
 
 export function renderWindowFrame(frameEl, trackEl, base, nextSeqNum, size, totalPackets) {
