@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Go-Back-N · Simulador de ventana deslizante</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="topbar__mark">GBN</span>
+      <div class="topbar__titles">
+        <h1>Go-Back-N <span class="topbar__divider">/</span> Ventana deslizante</h1>
+        <p>Laboratorio interactivo del protocolo ARQ — envía, pierde y retransmite paquetes a mano.</p>
+      </div>
+    </div>
+
+    <div class="topbar__transport">
+      <div class="duplex-toggle" role="group" aria-label="Modo de comunicación">
+        <button class="duplex-toggle__btn is-active" data-mode="full" id="modeFullBtn">Full Duplex</button>
+        <button class="duplex-toggle__btn" data-mode="half" id="modeHalfBtn">Half Duplex</button>
+      </div>
+      <div class="transport-controls">
+        <button class="btn btn--primary" id="startBtn" title="Iniciar / reanudar">▶ Iniciar</button>
+        <button class="btn" id="pauseBtn" title="Pausar">⏸ Pausar</button>
+        <button class="btn btn--ghost" id="resetBtn" title="Reiniciar todo">↻ Reiniciar</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ SIDEBAR: CONFIG ============ -->
+    <aside class="sidebar">
+      <section class="panel">
+        <h2 class="panel__title">Configuración</h2>
+
+        <label class="field">
+          <span class="field__label">Tamaño de ventana <b id="windowSizeVal">4</b></span>
+          <input type="range" id="windowSizeInput" min="1" max="10" step="1" value="4" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Número de paquetes <b id="packetCountVal">8</b></span>
+          <input type="range" id="packetCountInput" min="1" max="10" step="1" value="8" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Timeout <b id="timeoutVal">4.0s</b></span>
+          <input type="range" id="timeoutInput" min="1000" max="8000" step="250" value="4000" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Velocidad de animación <b id="speedVal">1.0×</b></span>
+          <input type="range" id="speedInput" min="0.25" max="3" step="0.25" value="1" />
+        </label>
+
+        <label class="field field--switch">
+          <span class="field__label">Pérdida aleatoria</span>
+          <input type="checkbox" id="randomLossInput" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+
+        <label class="field" id="randomLossRateField" hidden>
+          <span class="field__label">Probabilidad de pérdida <b id="randomLossRateVal">15%</b></span>
+          <input type="range" id="randomLossRateInput" min="5" max="50" step="5" value="15" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__title">Controles</h2>
+        <div class="control-grid">
+          <button class="btn" id="sendNextBtn">Enviar siguiente</button>
+          <button class="btn" id="sendWindowBtn">Enviar ventana</button>
+          <button class="btn btn--toggle" id="autoSendBtn">Enviar automático</button>
+          <button class="btn btn--warn" id="loseSelectedBtn" disabled>Simular pérdida</button>
+          <button class="btn btn--danger" id="forceTimeoutBtn">Forzar timeout</button>
+        </div>
+        <p class="hint">Haz clic en un paquete en tránsito dentro del canal para eliminarlo, o selecciona uno del emisor y usa <em>Simular pérdida</em> para que se pierda al enviarlo.</p>
+      </section>
+
+      <section class="panel packet-detail" id="packetDetail" hidden>
+        <h2 class="panel__title">Packet <span id="pdSeq">–</span></h2>
+        <dl class="packet-detail__list">
+          <div><dt>Sequence Number</dt><dd id="pdSeqNum">–</dd></div>
+          <div><dt>Status</dt><dd id="pdStatus">–</dd></div>
+          <div><dt>En ventana</dt><dd id="pdWindow">–</dd></div>
+          <div><dt>Intentos de transmisión</dt><dd id="pdAttempts">–</dd></div>
+          <div><dt>ACK</dt><dd id="pdAck">–</dd></div>
+        </dl>
+      </section>
+    </aside>
+
+    <!-- ============ MAIN: SIMULATION STAGE ============ -->
+    <main class="stage">
+
+      <section class="node node--sender">
+        <div class="node__label">
+          <span class="node__tag">EMISOR</span>
+          <span class="node__meta">Base = <b id="baseVal">0</b> · NextSeqNum = <b id="nextSeqVal">0</b> · Window = <b id="windowValLabel">4</b></span>
+        </div>
+        <div class="window-frame" id="windowFrame"></div>
+        <div class="packet-track" id="senderTrack" aria-label="Paquetes del emisor"></div>
+        <div class="timer-bar" id="timerBar" hidden>
+          <span class="timer-bar__label">Timeout de Packet <b id="timerBaseSeq">0</b></span>
+          <div class="timer-bar__track"><div class="timer-bar__fill" id="timerFill"></div></div>
+        </div>
+      </section>
+
+      <section class="channel" id="channel" aria-label="Canal de comunicación">
+        <div class="channel__rail channel__rail--down">
+          <span class="channel__rail-label">Emisor → Receptor</span>
+        </div>
+        <div class="channel__rail channel__rail--up">
+          <span class="channel__rail-label">Receptor → Emisor</span>
+        </div>
+      </section>
+
+      <section class="node node--receiver">
+        <div class="packet-track" id="receiverTrack" aria-label="Paquetes del receptor"></div>
+        <div class="node__label node__label--bottom">
+          <span class="node__tag">RECEPTOR</span>
+          <span class="node__meta">Esperando <b id="expectedVal">Packet 0</b></span>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============ STATS STRIP ============ -->
+  <section class="stats" aria-label="Estadísticas">
+    <div class="stat"><span class="stat__value" id="statSent">0</span><span class="stat__label">Enviados</span></div>
+    <div class="stat"><span class="stat__value" id="statReceived">0</span><span class="stat__label">Recibidos</span></div>
+    <div class="stat"><span class="stat__value" id="statLost">0</span><span class="stat__label">Perdidos</span></div>
+    <div class="stat"><span class="stat__value" id="statRetransmitted">0</span><span class="stat__label">Retransmitidos</span></div>
+    <div class="stat"><span class="stat__value" id="statAcksSent">0</span><span class="stat__label">ACK enviados</span></div>
+    <div class="stat"><span class="stat__value" id="statAcksReceived">0</span><span class="stat__label">ACK recibidos</span></div>
+    <div class="stat"><span class="stat__value" id="statTimeouts">0</span><span class="stat__label">Timeouts</span></div>
+    <div class="stat stat--accent"><span class="stat__value" id="statEfficiency">0%</span><span class="stat__label">Eficiencia</span></div>
+  </section>
+
+  <!-- ============ TIMELINE ============ -->
+  <section class="timeline" aria-label="Línea de tiempo de eventos">
+    <div class="timeline__header">
+      <h2>Línea de tiempo</h2>
+      <span class="timeline__clock" id="clockDisplay">00:00</span>
+    </div>
+    <ol class="timeline__list" id="timelineList"></ol>
+  </section>
+
+  <footer class="legend" aria-label="Leyenda de estados">
+    <span class="legend__item"><i class="dot dot--waiting"></i>Esperando</span>
+    <span class="legend__item"><i class="dot dot--sent"></i>Enviado</span>
+    <span class="legend__item"><i class="dot dot--transit"></i>En tránsito</span>
+    <span class="legend__item"><i class="dot dot--received"></i>Recibido</span>
+    <span class="legend__item"><i class="dot dot--acked"></i>ACK recibido</span>
+    <span class="legend__item"><i class="dot dot--lost"></i>Perdido</span>
+    <span class="legend__item"><i class="dot dot--outoforder"></i>Fuera de orden</span>
+    <span class="legend__item"><i class="dot dot--retransmitted"></i>Retransmitido</span>
+  </footer>
+
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
