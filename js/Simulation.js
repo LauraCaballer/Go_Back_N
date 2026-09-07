@@ -69,19 +69,41 @@ export class Simulation {
   // ---- lifecycle -------------------------------------------------------
 
   start() {
-    if (this.running) return;
-    this.running = true;
-    if (this.clockMs === 0) {
-      this.timeline.add(0, 'info', null, 'Simulación iniciada');
-    }
-    this._intervalHandle = setInterval(() => this._tick(TICK_MS), TICK_MS);
+  // Si ya existe un intervalo activo, no crear otro.
+  if (this._intervalHandle !== null) {
+    return;
   }
 
-  pause() {
-    this.running = false;
-    if (this._intervalHandle) clearInterval(this._intervalHandle);
+  this.running = true;
+
+  if (this.clockMs === 0) {
+    this.timeline.add(0, 'info', null, 'Simulación iniciada');
+  }
+
+  this._intervalHandle = setInterval(() => {
+    if (!this.running) return;
+
+    try {
+      this._tick(TICK_MS);
+    } catch (error) {
+      console.error('Error en el ciclo de simulación:', error);
+
+      // Evita que la interfaz quede en un estado falso.
+      this.pause();
+    }
+  }, TICK_MS);
+}
+
+pause() {
+  this.running = false;
+
+  if (this._intervalHandle !== null) {
+    clearInterval(this._intervalHandle);
     this._intervalHandle = null;
   }
+
+  this._emitTick();
+}
 
   reset(newConfig = {}) {
     this.pause();
