@@ -17,12 +17,12 @@ export class Simulation {
     this.config = {
       totalPackets: 8,
       windowSize: 4,
-      timeoutMs: 5500,
+      timeoutMs: 7500,
       mode: 'full',        // 'full' | 'half'
       speedMultiplier: 1,
       channelDurationMs: 2000,
       randomLossEnabled: false,
-      randomLossRate: 0.15,
+      randomLossRate: 0.75,
       ...config
     };
 
