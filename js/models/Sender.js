@@ -98,13 +98,19 @@ export class Sender {
 
   onTimeout() {
     const range = this.packetsToRetransmit();
-    this.onEvent('timeout', { base: this.window.base, upTo: this.window.nextSeqNum - 1 });
-    // Re-arm the timer for the (still outstanding) base packet so that if
-    // this retransmission is lost too, a new timeout fires after the full
-    // configured wait — instead of the timer staying off forever.
-    if (this.window.base < this.window.nextSeqNum) this.startTimer();
+
+    this.onEvent('timeout', {
+        base: this.window.base,
+        upTo: this.window.nextSeqNum - 1
+    });
+
+    // El temporizador vuelve a comenzar para el paquete base.
+    if (this.window.base < this.window.nextSeqNum) {
+        this.startTimer();
+    }
+
     return range;
-  }
+}
 
   // ---- ACK handling ----------------------------------------------------
 

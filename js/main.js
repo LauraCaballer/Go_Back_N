@@ -84,7 +84,7 @@ const sim = new Simulation(
   {
     totalPackets: 8,
     windowSize: 4,
-    timeoutMs: 4000,
+    timeoutMs: 5500,
     mode: 'full',
     speedMultiplier: 1
   },

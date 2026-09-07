@@ -17,10 +17,10 @@ export class Simulation {
     this.config = {
       totalPackets: 8,
       windowSize: 4,
-      timeoutMs: 4000,
+      timeoutMs: 5500,
       mode: 'full',        // 'full' | 'half'
       speedMultiplier: 1,
-      channelDurationMs: 2200,
+      channelDurationMs: 2000,
       randomLossEnabled: false,
       randomLossRate: 0.15,
       ...config
@@ -33,6 +33,9 @@ export class Simulation {
     this.autoSendIntervalMs = 900;
     this.pendingManualLoss = new Set(); // seq numbers flagged to drop on next send
     this.finished = false;
+    this.pendingRetransmissions = [];
+    this.retransmissionDelayMs = 300;
+    this.retransmissionTimerMs = 0;
 
     this._buildModels();
     this._intervalHandle = null;
@@ -88,6 +91,8 @@ export class Simulation {
     this.autoSendTimer = 0;
     this.pendingManualLoss.clear();
     this.finished = false;
+    this.pendingRetransmissions = [];
+    this.retransmissionTimerMs = 0;
     this._buildModels();
     this.timeline.add(0, 'info', null, 'Simulación reiniciada');
     this._emitTick();
@@ -282,6 +287,31 @@ export class Simulation {
 
   // ---- main loop -----------------------------------------------------
 
+  _processRetransmissions(dt) {
+  if (this.pendingRetransmissions.length === 0) {
+    this.retransmissionTimerMs = 0;
+    return;
+  }
+
+  this.retransmissionTimerMs -= dt;
+
+  if (this.retransmissionTimerMs > 0) {
+    return;
+  }
+
+  const seq = this.pendingRetransmissions.shift();
+
+  if (seq !== undefined) {
+    this._retransmit(seq);
+  }
+
+  if (this.pendingRetransmissions.length > 0) {
+    this.retransmissionTimerMs = this.retransmissionDelayMs;
+  } else {
+    this.retransmissionTimerMs = 0;
+  }
+}
+
   _tick(dtRealMs) {
     if (!this.running) return;
     const dt = dtRealMs * this.config.speedMultiplier;
@@ -308,18 +338,34 @@ export class Simulation {
 
     arrivedData.forEach((item) => this._handleDataArrival(item));
     arrivedAcks.forEach((item) => this._handleAckArrival(item));
+    // Retransmisiones Go-Back-N escalonadas.
+    this._processRetransmissions(dt);
 
     if (this.sender.tickTimer(dt)) {
-      this.statistics.recordTimeout();
-      const range = this.sender.onTimeout();
-      this.timeline.add(
-        this.clockMs,
-        'timeout',
-        null,
-        `Timeout de Packet ${this.sender.window.base} — retransmitiendo hasta ${this.sender.window.nextSeqNum - 1}`
-      );
-      range.forEach((packet) => this._retransmit(packet.seq));
-    }
+  this.statistics.recordTimeout();
+
+  const base = this.sender.window.base;
+  const upTo = this.sender.window.nextSeqNum - 1;
+
+  const range = this.sender.onTimeout();
+
+  this.timeline.add(
+    this.clockMs,
+    'timeout',
+    null,
+    `Timeout de Packet ${base} — retransmitiendo hasta ${upTo}`
+  );
+
+  // Cancelar cualquier cola anterior.
+  this.pendingRetransmissions = [];
+
+  // Programar las retransmisiones una por una.
+  range.forEach((packet) => {
+    this.pendingRetransmissions.push(packet.seq);
+  });
+
+  this.retransmissionTimerMs = 0;
+}
 
     if (this.sender.isFinished() && !this.finished) {
       this.finished = true;
