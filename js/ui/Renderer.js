@@ -90,17 +90,22 @@ export function renderChannelItems(channelEl, items, { onLose }) {
 
 export function renderTimeline(listEl, events) {
   listEl.innerHTML = '';
-  events.forEach((ev) => {
+
+  [...events].reverse().forEach((ev) => {
     const li = document.createElement('li');
+
     li.innerHTML = `
       <span class="timeline__time">[${ev.time}]</span>
       <span class="timeline__type timeline__type--${ev.type}">${ev.type}</span>
       <span class="timeline__desc">${ev.description}</span>
     `;
+
     listEl.appendChild(li);
   });
-}
 
+  // Mantener visible siempre el evento más reciente.
+  listEl.scrollTop = 0;
+}
 export function renderStats(els, stats) {
   els.sent.textContent = stats.sent;
   els.received.textContent = stats.received;
