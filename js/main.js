@@ -9,6 +9,14 @@ import {
   formatClock
 } from './ui/Renderer.js';
 
+import { Evaluation } from './services/Evaluation.js';
+
+import {
+  renderEvaluationQuestion,
+  renderEvaluationResult,
+  renderEvaluationFinal
+} from './ui/EvaluationRenderer.js';
+
 // ---- DOM references -----------------------------------------------------
 
 const $ = (id) => document.getElementById(id);
@@ -73,25 +81,73 @@ const els = {
   },
 
   timelineList: $('timelineList'),
-  clockDisplay: $('clockDisplay')
+  clockDisplay: $('clockDisplay'),
+  evaluationPanel: $('evaluationPanel'),
+evaluationStart: $('evaluationStart'),
+startEvaluationBtn: $('startEvaluationBtn')
 };
 
 // ---- app state ------------------------------------------------------------
 
 let selectedSeq = null;
 
+const evaluation = new Evaluation({
+  onQuestion: (question) => {
+    sim.pause();
+
+    renderEvaluationQuestion(
+      els.evaluationPanel,
+      question,
+      evaluation.getState()
+    );
+  },
+
+  onResult: (result) => {
+    if (result.correct !== undefined) {
+      renderEvaluationResult(
+        els.evaluationPanel,
+        result
+      );
+    }
+  },
+
+  onFinish: (result) => {
+    renderEvaluationFinal(
+      els.evaluationPanel,
+      result
+    );
+  }
+});
+
+
 const sim = new Simulation(
   {
     totalPackets: 8,
     windowSize: 4,
-    timeoutMs: 5500,
+    timeoutMs: 4000,
     mode: 'full',
     speedMultiplier: 1
   },
   {
     onTick: (state) => render(state),
-    onTimelineEvent: () => renderTimeline(els.timelineList, sim.timeline.events),
-    onStatsChange: (stats) => renderStats(els.stats, stats)
+
+    onTimelineEvent: (event) => {
+      renderTimeline(
+        els.timelineList,
+        sim.timeline.events
+      );
+
+      // La evaluación analiza cada evento de la simulación.
+      if (evaluation.isActive() && event) {
+        evaluation.processEvent(
+          event,
+          sim.getState()
+        );
+      }
+    },
+
+    onStatsChange: (stats) =>
+      renderStats(els.stats, stats)
   }
 );
 
@@ -167,9 +223,20 @@ els.startBtn.addEventListener('click', () => sim.start());
 els.pauseBtn.addEventListener('click', () => sim.pause());
 els.resetBtn.addEventListener('click', () => {
   selectedSeq = null;
+
+  evaluation.reset();
+
+  els.evaluationPanel.hidden = true;
+  els.evaluationStart.hidden = false;
+
   sim.reset();
+
   render(sim.getState());
-  renderTimeline(els.timelineList, sim.timeline.events);
+
+  renderTimeline(
+    els.timelineList,
+    sim.timeline.events
+  );
 });
 
 els.modeFullBtn.addEventListener('click', () => setMode('full'));
@@ -243,6 +310,62 @@ els.loseSelectedBtn.addEventListener('click', () => {
   }
   render(sim.getState());
 });
+
+// ============================================================
+// EVALUACIÓN
+// ============================================================
+
+els.startEvaluationBtn.addEventListener('click', () => {
+  evaluation.start();
+
+  els.evaluationStart.hidden = true;
+  els.evaluationPanel.hidden = false;
+
+  // Iniciar la simulación.
+  sim.start();
+});
+
+
+els.evaluationPanel.addEventListener(
+  'evaluation-answer',
+  (event) => {
+    evaluation.answer(event.detail.answer);
+  }
+);
+
+
+els.evaluationPanel.addEventListener(
+  'evaluation-continue',
+  (event) => {
+    if (event.detail.finished) {
+      return;
+    }
+
+    els.evaluationPanel.hidden = true;
+
+    sim.start();
+  }
+);
+
+
+els.evaluationPanel.addEventListener(
+  'evaluation-restart',
+  () => {
+    evaluation.reset();
+
+    els.evaluationPanel.hidden = true;
+    els.evaluationStart.hidden = false;
+
+    sim.reset();
+
+    render(sim.getState());
+
+    renderTimeline(
+      els.timelineList,
+      sim.timeline.events
+    );
+  }
+);
 
 // ---- initial paint ------------------------------------------------------------
 
