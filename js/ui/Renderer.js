@@ -14,58 +14,69 @@ const STATUS_LABEL = {
 };
 
 export function renderPacketTrack(trackEl, packets, { selectedSeq, onSelect }) {
-  const existing = new Map();
+  // Guardamos los botones que ya existen para NO recrearlos en cada tick.
+  const existingPackets = new Map();
 
-  // Guardar los botones que ya existen
   trackEl.querySelectorAll('.packet').forEach((el) => {
-    existing.set(Number(el.dataset.seq), el);
+    const seq = Number(el.dataset.seq);
+    existingPackets.set(seq, el);
   });
 
-  packets.forEach((p) => {
-    let el = existing.get(p.seq);
+  const activeSeqs = new Set();
 
-    // Si el paquete todavía no existe, crearlo
+  packets.forEach((p) => {
+    activeSeqs.add(p.seq);
+
+    let el = existingPackets.get(p.seq);
+
+    // Solo creamos el botón la primera vez.
     if (!el) {
       el = document.createElement('button');
+
       el.type = 'button';
       el.dataset.seq = p.seq;
 
-      el.addEventListener('click', () => {
-        onSelect(p.seq);
+      el.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const seq = Number(event.currentTarget.dataset.seq);
+
+        if (Number.isNaN(seq)) return;
+
+        onSelect?.(seq);
       });
 
       trackEl.appendChild(el);
     }
 
-    // Actualizar solamente lo necesario
+    // Actualizamos únicamente la información visual.
     el.className =
       `packet packet--${p.status}` +
       (p.seq === selectedSeq ? ' is-selected' : '');
 
-    el.textContent = p.seq;
-    el.title = `Packet ${p.seq} — ${STATUS_LABEL[p.status] || p.status}`;
+    el.title =
+      `Packet ${p.seq} — ${STATUS_LABEL[p.status] || p.status}`;
 
-    // Actualizar badge de intentos
-    const oldBadge = el.querySelector('.packet__badge');
+    // Actualizamos el contenido sin destruir el botón.
+    el.textContent = p.seq;
 
     if (p.attempts > 1) {
-      const badge = oldBadge || document.createElement('span');
+      const badge = document.createElement('span');
 
       badge.className = 'packet__badge';
       badge.textContent = `×${p.attempts}`;
 
-      if (!oldBadge) {
-        el.appendChild(badge);
-      }
-    } else if (oldBadge) {
-      oldBadge.remove();
+      el.appendChild(badge);
     }
-
-    existing.delete(p.seq);
   });
 
-  // Eliminar paquetes que ya no existen
-  existing.forEach((el) => el.remove());
+  // Eliminamos únicamente paquetes que ya no existen.
+  existingPackets.forEach((el, seq) => {
+    if (!activeSeqs.has(seq)) {
+      el.remove();
+    }
+  });
 }
 
 export function renderWindowFrame(frameEl, trackEl, base, nextSeqNum, size, totalPackets) {

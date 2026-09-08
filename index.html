@@ -131,6 +131,28 @@
         </div>
       </section>
 
+
+       <!-- ============ TIMELINE ============ -->
+  <section class="timeline" aria-label="Línea de tiempo de eventos">
+    <div class="timeline__header">
+      <h2>Línea de tiempo</h2>
+      <span class="timeline__clock" id="clockDisplay">00:00</span>
+    </div>
+    <ol class="timeline__list" id="timelineList"></ol>
+  </section>
+
+  <footer class="legend" aria-label="Leyenda de estados">
+    <span class="legend__item"><i class="dot dot--waiting"></i>Esperando</span>
+    <span class="legend__item"><i class="dot dot--sent"></i>Enviado</span>
+    <span class="legend__item"><i class="dot dot--transit"></i>En tránsito</span>
+    <span class="legend__item"><i class="dot dot--received"></i>Recibido</span>
+    <span class="legend__item"><i class="dot dot--acked"></i>ACK recibido</span>
+    <span class="legend__item"><i class="dot dot--lost"></i>Perdido</span>
+    <span class="legend__item"><i class="dot dot--outoforder"></i>Fuera de orden</span>
+    <span class="legend__item"><i class="dot dot--retransmitted"></i>Retransmitido</span>
+  </footer>
+
+
     </main>
   </div>
 
@@ -170,26 +192,9 @@
   </button>
 </section>
 
-  <!-- ============ TIMELINE ============ -->
-  <section class="timeline" aria-label="Línea de tiempo de eventos">
-    <div class="timeline__header">
-      <h2>Línea de tiempo</h2>
-      <span class="timeline__clock" id="clockDisplay">00:00</span>
-    </div>
-    <ol class="timeline__list" id="timelineList"></ol>
-  </section>
+ 
 
-  <footer class="legend" aria-label="Leyenda de estados">
-    <span class="legend__item"><i class="dot dot--waiting"></i>Esperando</span>
-    <span class="legend__item"><i class="dot dot--sent"></i>Enviado</span>
-    <span class="legend__item"><i class="dot dot--transit"></i>En tránsito</span>
-    <span class="legend__item"><i class="dot dot--received"></i>Recibido</span>
-    <span class="legend__item"><i class="dot dot--acked"></i>ACK recibido</span>
-    <span class="legend__item"><i class="dot dot--lost"></i>Perdido</span>
-    <span class="legend__item"><i class="dot dot--outoforder"></i>Fuera de orden</span>
-    <span class="legend__item"><i class="dot dot--retransmitted"></i>Retransmitido</span>
-  </footer>
-
+  
 </div>
 
 <script type="module" src="js/main.js"></script>

@@ -1297,3 +1297,15 @@ input:checked + .switch::after {
     animation-duration: 0.01ms !important;
   }
 }
+.stage .timeline {
+  margin-top: 24px;
+}
+
+.stage .timeline__list {
+  max-height: 180px;
+}
+
+.stage .timeline {
+  border-top: 2px solid var(--grid-line);
+}
+

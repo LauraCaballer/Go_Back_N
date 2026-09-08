@@ -128,6 +128,8 @@ const sim = new Simulation(
     mode: 'full',
     speedMultiplier: 0.75
   },
+
+  
   {
     onTick: (state) => render(state),
 
@@ -205,13 +207,38 @@ function updateLoseButton(packet) {
     els.loseSelectedBtn.disabled = true;
     return;
   }
-  els.loseSelectedBtn.disabled = !(packet.status === 'waiting' || packet.status === 'in_transit' || packet.status === 'sent');
+
+  const state = sim.getState();
+
+  // ¿Hay un paquete de datos seleccionado que todavía está viajando?
+  const dataInTransit = state.channelItems.some(
+    (item) =>
+      item.kind === 'data' &&
+      item.seq === packet.seq
+  );
+
+  // ¿Hay un ACK de este paquete viajando hacia el emisor?
+  const ackInTransit = state.channelItems.some(
+    (item) =>
+      item.kind === 'ack' &&
+      item.ack === packet.seq
+  );
+
+  const canLosePacket =
+    packet.status === 'waiting' ||
+    packet.status === 'in_transit' ||
+    packet.status === 'sent';
+
+  els.loseSelectedBtn.disabled =
+    !(canLosePacket || dataInTransit || ackInTransit);
 }
 
 function selectPacket(seq) {
   selectedSeq = selectedSeq === seq ? null : seq;
   render(sim.getState());
 }
+
+
 
 function loseChannelItem(itemId) {
   sim.loseInFlightItem(itemId);
