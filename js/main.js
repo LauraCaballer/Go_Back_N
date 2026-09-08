@@ -6,7 +6,9 @@ import {
   renderTimeline,
   renderStats,
   renderPacketDetail,
-  formatClock
+  formatClock,
+  renderGBNDiagram,
+  resetGBNDiagram 
 } from './ui/Renderer.js';
 
 import { Evaluation } from './services/Evaluation.js';
@@ -27,6 +29,7 @@ const els = {
   resetBtn: $('resetBtn'),
   modeFullBtn: $('modeFullBtn'),
   modeHalfBtn: $('modeHalfBtn'),
+  gbnSvg: document.getElementById('gbnSvg'),
 
   windowSizeInput: $('windowSizeInput'),
   windowSizeVal: $('windowSizeVal'),
@@ -150,6 +153,7 @@ const sim = new Simulation(
 
     onStatsChange: (stats) =>
       renderStats(els.stats, stats)
+    
   }
 );
 
@@ -200,6 +204,7 @@ function render(state) {
   els.autoSendBtn.classList.toggle('is-on', state.autoSendEnabled);
   els.startBtn.disabled = state.running;
   els.pauseBtn.disabled = !state.running;
+  renderGBNDiagram(els.gbnSvg, state.channelItems);
 }
 
 function updateLoseButton(packet) {
@@ -254,7 +259,10 @@ els.resetBtn.addEventListener('click', () => {
   evaluation.reset();
 
   els.evaluationPanel.hidden = true;
+  els.evaluationPanel.innerHTML = '';
   els.evaluationStart.hidden = false;
+
+   resetGBNDiagram(els.gbnSvg);
 
   sim.reset();
 
@@ -343,6 +351,7 @@ els.loseSelectedBtn.addEventListener('click', () => {
 // ============================================================
 
 els.startEvaluationBtn.addEventListener('click', () => {
+  els.evaluationPanel.innerHTML = '';  
   evaluation.start();
 
   els.evaluationStart.hidden = true;
@@ -381,6 +390,7 @@ els.evaluationPanel.addEventListener(
     evaluation.reset();
 
     els.evaluationPanel.hidden = true;
+    els.evaluationPanel.innerHTML = '';
     els.evaluationStart.hidden = false;
 
     sim.reset();

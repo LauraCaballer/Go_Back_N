@@ -152,24 +152,24 @@
     <span class="legend__item"><i class="dot dot--retransmitted"></i>Retransmitido</span>
   </footer>
 
+  <!-- ============ DIAGRAMA GBN (NUEVO) ============ -->
+<section class="gbn-diagram">
+  <h2 class="gbn-diagram__title">Diagrama Go-Back-N</h2>
+
+  <div class="gbn-diagram__container">
+    <div class="gbn-diagram__sender">Sender</div>
+    <div class="gbn-diagram__receiver">Receiver</div>
+
+    <svg id="gbnSvg" class="gbn-diagram__svg"></svg>
+  </div>
+  
+</section>
+
+
 
     </main>
-  </div>
 
-  <!-- ============ STATS STRIP ============ -->
-  <section class="stats" aria-label="Estadísticas">
-    <div class="stat"><span class="stat__value" id="statSent">0</span><span class="stat__label">Enviados</span></div>
-    <div class="stat"><span class="stat__value" id="statReceived">0</span><span class="stat__label">Recibidos</span></div>
-    <div class="stat"><span class="stat__value" id="statLost">0</span><span class="stat__label">Perdidos</span></div>
-    <div class="stat"><span class="stat__value" id="statRetransmitted">0</span><span class="stat__label">Retransmitidos</span></div>
-    <div class="stat"><span class="stat__value" id="statAcksSent">0</span><span class="stat__label">ACK enviados</span></div>
-    <div class="stat"><span class="stat__value" id="statAcksReceived">0</span><span class="stat__label">ACK recibidos</span></div>
-    <div class="stat"><span class="stat__value" id="statTimeouts">0</span><span class="stat__label">Timeouts</span></div>
-    <div class="stat stat--accent"><span class="stat__value" id="statEfficiency">0%</span><span class="stat__label">Eficiencia</span></div>
-  </section>
-
-
-  <!-- ============ EVALUACIÓN ============ -->
+     <!-- ============ EVALUACIÓN ============ -->
 <section class="evaluation-panel" id="evaluationPanel" hidden>
 </section>
 
@@ -192,6 +192,22 @@
   </button>
 </section>
 
+  </div>
+
+  <!-- ============ STATS STRIP ============ -->
+  <section class="stats" aria-label="Estadísticas">
+    <div class="stat"><span class="stat__value" id="statSent">0</span><span class="stat__label">Enviados</span></div>
+    <div class="stat"><span class="stat__value" id="statReceived">0</span><span class="stat__label">Recibidos</span></div>
+    <div class="stat"><span class="stat__value" id="statLost">0</span><span class="stat__label">Perdidos</span></div>
+    <div class="stat"><span class="stat__value" id="statRetransmitted">0</span><span class="stat__label">Retransmitidos</span></div>
+    <div class="stat"><span class="stat__value" id="statAcksSent">0</span><span class="stat__label">ACK enviados</span></div>
+    <div class="stat"><span class="stat__value" id="statAcksReceived">0</span><span class="stat__label">ACK recibidos</span></div>
+    <div class="stat"><span class="stat__value" id="statTimeouts">0</span><span class="stat__label">Timeouts</span></div>
+    <div class="stat stat--accent"><span class="stat__value" id="statEfficiency">0%</span><span class="stat__label">Eficiencia</span></div>
+  </section>
+
+
+ 
  
 
   

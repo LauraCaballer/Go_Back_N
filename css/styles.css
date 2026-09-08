@@ -272,7 +272,7 @@ button {
 
 .layout {
   display: grid;
-  grid-template-columns: 290px 1fr;
+  grid-template-columns: 290px 1fr 360px;
   gap: 20px;
   align-items: start;
 }
@@ -983,20 +983,17 @@ input:checked + .switch::after {
    EVALUACIÓN
    =========================================================== */
 
-.evaluation-start,
-.evaluation-panel {
-  margin: 24px 20px 0;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  border-radius: 8px;
-}
-
 .evaluation-start {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   padding: 22px 24px;
+}
+
+.evaluation-start[hidden],
+.evaluation-panel[hidden] {
+  display: none !important;
 }
 
 .evaluation-start__eyebrow,
@@ -1010,33 +1007,40 @@ input:checked + .switch::after {
   color: var(--accent);
 }
 
-.evaluation-start h2,
-.evaluation-panel h2 {
-  margin: 0;
-}
-
-.evaluation-start p {
-  max-width: 700px;
-  margin: 8px 0 0;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
+.evaluation-start,
 .evaluation-panel {
-  padding: 24px;
+  margin: 0;                 /* antes: 24px 20px 0 */
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.evaluation-start {
+  display: flex;
+  flex-direction: column;    /* antes: fila con space-between */
+  align-items: stretch;
+  gap: 16px;
+  padding: 18px;             /* antes: 22px 24px */
 }
 
 .evaluation__header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 24px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.evaluation__header h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  line-height: 1.3;
 }
 
 .evaluation__score {
-  min-width: 90px;
-  padding: 10px 14px;
+  flex-shrink: 0;
+  min-width: 56px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   text-align: center;
@@ -1054,22 +1058,22 @@ input:checked + .switch::after {
   display: block;
   margin-top: 2px;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 24px;
+  font-size: 18px;
 }
 
 .evaluation__question {
-  padding: 18px;
+  padding: 14px;
   border-left: 3px solid var(--accent);
   background: rgba(228, 112, 150, 0.06);
-  font-size: 17px;
+  font-size: 14.5px;
   line-height: 1.5;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .evaluation__options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;   /* antes: 1fr 1fr */
+  gap: 8px;
 }
 
 .evaluation-option {
@@ -1077,9 +1081,10 @@ input:checked + .switch::after {
   align-items: flex-start;
   gap: 12px;
   width: 100%;
-  padding: 14px;
+  padding: 10px;
+  font-size: 13.5px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1105,8 +1110,9 @@ input:checked + .switch::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  height: 28px;
+  flex: 0 0 24px;
+  height: 24px;
+  font-size: 12px;
   border: 1px solid var(--border);
   border-radius: 4px;
   font-family: 'IBM Plex Mono', monospace;
@@ -1179,7 +1185,7 @@ input:checked + .switch::after {
 
 .evaluation-final__score {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 52px;
+  font-size: 40px;
   font-weight: 700;
   color: var(--accent);
 }
@@ -1203,14 +1209,16 @@ input:checked + .switch::after {
 
 .evaluation-final__stats {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 
 .evaluation-final__stats div {
-  min-width: 100px;
-  padding: 12px;
+  flex: 1 1 80px;
+  min-width: 0;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -1309,3 +1317,79 @@ input:checked + .switch::after {
   border-top: 2px solid var(--grid-line);
 }
 
+/* ===========================================================
+   GBN DIAGRAM
+   =========================================================== */
+
+.gbn-diagram {
+  margin-top: 30px;
+  padding: 20px;
+  border-top: 2px solid var(--grid-line);
+}
+
+.gbn-diagram__title {
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* Contenedor del diagrama: UNA sola definición, sin altura fija
+   peleando contra el max-height. Esto es lo que permite el scroll
+   cuando hay muchos paquetes. */
+.gbn-diagram__container {
+  position: relative;
+  max-height: 400px;
+  background: var(--bg);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius-md);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.gbn-diagram__sender,
+.gbn-diagram__receiver {
+  position: absolute;
+  top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 2;
+}
+
+.gbn-diagram__sender {
+  left: 20px;
+}
+
+.gbn-diagram__receiver {
+  right: 20px;
+}
+
+/* IMPORTANTE: sin height:100% aquí. El alto real lo pone el JS
+   (svgEl.setAttribute('height', ...)) según cuántas líneas hay.
+   Si se fuerza a 100%, el SVG se aplasta al tamaño del contenedor
+   y el scroll nunca aparece porque no hay overflow real. */
+.gbn-diagram__svg {
+  width: 100%;
+  display: block;
+}
+
+/* líneas */
+.gbn-line {
+  stroke: var(--accent-teal);
+  stroke-width: 2;
+  fill: none;
+  opacity: 0.9;
+  transition: all 0.1s linear;
+}
+
+.gbn-line.ack {
+  stroke: #5E7883;
+  stroke-dasharray: 6;
+}
+
+.evaluation__stop {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 10px;
+}

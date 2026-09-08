@@ -184,3 +184,104 @@ export function formatClock(ms) {
   const ss = String(totalSeconds % 60).padStart(2, '0');
   return `${mm}:${ss}`;
 }
+
+const drawnItems = new Map();
+const dataEndPoints = new Map(); // 👈 guarda dónde termina cada DATA
+let lineCounter = 0;
+
+export function renderGBNDiagram(svgEl, channelItems) {
+
+  if (!svgEl) return;
+
+  const width = svgEl.clientWidth;
+
+  const leftX = 80;
+  const rightX = width - 80;
+
+  const separation = 60;
+  const diagonal = 70;
+
+  channelItems.forEach((item) => {
+    let line = drawnItems.get(item.id);
+
+    if (!line) {
+      line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute(
+        "class",
+        "gbn-line" + (item.kind === "ack" ? " ack" : "")
+      );
+
+      // 👇 fix: antes esto nunca avanzaba (lineCounter se quedaba en 0),
+      // por eso la altura del SVG nunca crecía y todo se veía cortado.
+      const row = lineCounter++;
+      line.dataset.row = row;
+
+      svgEl.appendChild(line);
+      drawnItems.set(item.id, line);
+    }
+
+    const row = Number(line.dataset.row);
+    const baseY = 40 + row * separation;
+
+    const p = item.progress;
+
+    let x1, y1, x2, y2;
+
+    if (item.kind === "data") {
+      // 🔴 DATA
+      x1 = leftX;
+      y1 = baseY;
+
+      x2 = leftX + (rightX - leftX) * p;
+      y2 = baseY + diagonal * p;
+
+      // 👇 guardar SIEMPRE la posición actual
+      dataEndPoints.set(item.seq, { x: x2, y: y2 });
+
+    } else {
+      // 🔵 ACK
+
+      // 👇 buscar dónde terminó el DATA correspondiente
+      const start = dataEndPoints.get(item.seq);
+
+      if (start) {
+        x1 = start.x;
+        y1 = start.y;
+      } else {
+        // fallback (por si aún no llegó)
+        x1 = rightX;
+        y1 = baseY + diagonal;
+      }
+
+      x2 = x1 - (rightX - leftX) * p;
+      y2 = y1 + diagonal * p; // sigue bajando ↙
+    }
+
+    line.setAttribute("x1", x1);
+    line.setAttribute("y1", y1);
+    line.setAttribute("x2", x2);
+    line.setAttribute("y2", y2);
+
+    if (p >= 1) {
+      line.style.opacity = "0.6";
+    }
+  });
+
+  // 👇 fix: calculamos la altura DESPUÉS de procesar los items,
+  // usando el número real de filas que existen hasta ahora, y la
+  // aplicamos siempre para que el contenedor con overflow-y:auto
+  // sepa que hay más contenido y muestre el scroll.
+  const totalRows = lineCounter;
+  const height = 80 + totalRows * separation;
+  svgEl.setAttribute("height", height);
+}
+
+export function resetGBNDiagram(svgEl) {
+  drawnItems.clear();
+  dataEndPoints.clear();
+  lineCounter = 0;
+
+  if (svgEl) {
+    svgEl.innerHTML = "";
+  }
+}
