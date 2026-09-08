@@ -41,6 +41,14 @@
   --radius-sm: 4px;
   --radius-md: 8px;
 
+  /* Diagrama de piggybacking: A = gris, B = rosado (el mismo accent-teal
+     de siempre), versiones claras para cuando van combinados (dato+ACK),
+     y un tono oscuro neutro para el ACK puro (sin importar de quién es). */
+  --diagram-gray: #7C8794;
+  --diagram-gray-light: #CBD2D9;
+  --diagram-pink-light: #F3C3D3;
+  --diagram-dark: #3A4149;
+
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
   --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -379,6 +387,16 @@ input[type="range"]::-moz-range-thumb {
   justify-content: space-between;
 }
 
+.field--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field--row .field__label {
+  margin: 0;
+}
+
 .field--switch input[type="checkbox"] {
   position: absolute;
   opacity: 0;
@@ -435,6 +453,11 @@ input:checked + .switch::after {
   color: var(--text-faint);
   line-height: 1.5;
   margin: 12px 0 0;
+}
+
+.hint--warn {
+  color: var(--accent-teal);
+  font-weight: 600;
 }
 
 
@@ -752,6 +775,83 @@ input:checked + .switch::after {
   background: rgba(212, 230, 235, 0.45);
   border: 1.5px solid #AFCBD4;
   color: #5E7883;
+}
+
+/* Item combinado: lleva datos Y un ACK montado encima (piggyback). */
+.channel-item--combined {
+  background: linear-gradient(90deg, rgba(228, 112, 150, 0.14) 0%, rgba(212, 230, 235, 0.45) 100%);
+  border: 1.5px solid var(--accent-teal);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 2px rgba(175, 203, 212, 0.35);
+}
+
+.channel-item--naked-ack {
+  background: rgba(212, 230, 235, 0.45);
+  border: 1.5px dashed #AFCBD4;
+  color: #5E7883;
+}
+
+
+/* ===========================================================
+   MODE TABS (navegación entre pestañas: Envío simple / Piggybacking)
+   =========================================================== */
+
+.mode-tabs {
+  display: inline-flex;
+  background: var(--bg-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+}
+
+.mode-tabs__link {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-tabs__link.is-active {
+  background: var(--accent-teal);
+  color: var(--bg);
+}
+
+.mode-tabs__link:not(.is-active):hover {
+  color: var(--text-primary);
+}
+
+
+/* ===========================================================
+   PIGGYBACKING TAB — extras
+   =========================================================== */
+
+.station-panel {
+  position: relative;
+}
+
+.ack-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--grid-line);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.ack-badge--waiting {
+  color: var(--accent-teal);
+  border-color: var(--accent-teal-dim);
 }
 
 .channel-item--doomed {
@@ -1327,6 +1427,17 @@ input:checked + .switch::after {
   border-top: 2px solid var(--grid-line);
 }
 
+/* Variante para cuando el diagrama va en la tercera columna del grid
+   (junto al stage) en vez de como bloque de ancho completo debajo. */
+.gbn-diagram--sidebar {
+  margin-top: 0;
+  border-top: none;
+  border-left: 1px solid var(--grid-line);
+  padding: 4px 0 4px 20px;
+  position: sticky;
+  top: 20px;
+}
+
 .gbn-diagram__title {
   font-size: 13px;
   text-transform: uppercase;
@@ -1386,6 +1497,24 @@ input:checked + .switch::after {
 .gbn-line.ack {
   stroke: #5E7883;
   stroke-dasharray: 6;
+}
+
+/* Se usa en el diagrama de piggybacking para paquetes marcados como
+   "se van a perder" — entrecortado desde que sale, no solo al final. */
+.gbn-line--lost {
+  stroke-dasharray: 5 5;
+  opacity: 0.6;
+}
+
+.gbn-diagram__time-axis {
+  stroke: var(--grid-line-soft);
+  stroke-width: 1;
+}
+
+.gbn-diagram__time-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  fill: var(--text-faint);
 }
 
 .evaluation__stop {

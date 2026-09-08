@@ -23,6 +23,10 @@
     </div>
 
     <div class="topbar__transport">
+      <nav class="mode-tabs" aria-label="Modo del simulador">
+        <a class="mode-tabs__link is-active" href="index.html">Envío simple</a>
+        <a class="mode-tabs__link" href="piggyback.html">Conversación (Piggybacking)</a>
+      </nav>
       <div class="duplex-toggle" role="group" aria-label="Modo de comunicación">
         <button class="duplex-toggle__btn is-active" data-mode="full" id="modeFullBtn">Full Duplex</button>
         <button class="duplex-toggle__btn" data-mode="half" id="modeHalfBtn">Half Duplex</button>
@@ -42,6 +46,20 @@
       <section class="panel">
         <h2 class="panel__title">Configuración</h2>
 
+        <label class="field field--row">
+          <span class="field__label">Política ARQ</span>
+          <div class="duplex-toggle" role="group" aria-label="Política de retransmisión">
+            <button class="duplex-toggle__btn is-active" data-policy="gbn" id="policyGbnBtn">Go-Back-N</button>
+            <button class="duplex-toggle__btn" data-policy="sr" id="policySrBtn">Selective Repeat</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Bits de secuencia (m) <b id="sequenceBitsVal">3</b></span>
+          <input type="range" id="sequenceBitsInput" min="2" max="5" step="1" value="3" />
+        </label>
+        <p class="hint" id="windowLimitHint">Rango 0..7 · ventana máxima con Go-Back-N: 7</p>
+
         <label class="field">
           <span class="field__label">Tamaño de ventana <b id="windowSizeVal">4</b></span>
           <input type="range" id="windowSizeInput" min="1" max="10" step="1" value="4" />
@@ -58,9 +76,16 @@
           </label>
 
         <label class="field">
-          <span class="field__label">Velocidad de animación <b id="speedVal">0.75×</b></span>
+          <span class="field__label">Retardo de propagación (1 sentido) <b id="propDelayVal">2.0s</b></span>
+          <input type="range" id="propDelayInput" min="250" max="4000" step="250" value="2000" />
+        </label>
+        <p class="hint" id="rttHint">RTT estimado (ida + vuelta): 4.0s</p>
+
+        <label class="field">
+          <span class="field__label">Velocidad de reproducción <b id="speedVal">0.75×</b></span>
 <input type="range" id="speedInput" min="0.25" max="3" step="0.25" value="0.75" />
         </label>
+        <p class="hint">Solo cambia qué tan rápido lo ves en pantalla — no altera la relación entre timeout y RTT.</p>
 
         <label class="field field--switch">
           <span class="field__label">Pérdida aleatoria</span>
@@ -109,7 +134,7 @@
         <div class="window-frame" id="windowFrame"></div>
         <div class="packet-track" id="senderTrack" aria-label="Paquetes del emisor"></div>
         <div class="timer-bar" id="timerBar" hidden>
-          <span class="timer-bar__label">Timeout de Packet <b id="timerBaseSeq">0</b></span>
+          <span class="timer-bar__label">Timeout de Packet <b id="timerBaseSeq">0</b><span id="timerPolicyTag"></span></span>
           <div class="timer-bar__track"><div class="timer-bar__fill" id="timerFill"></div></div>
         </div>
       </section>

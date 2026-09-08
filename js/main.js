@@ -33,10 +33,18 @@ const els = {
 
   windowSizeInput: $('windowSizeInput'),
   windowSizeVal: $('windowSizeVal'),
+  windowLimitHint: $('windowLimitHint'),
+  policyGbnBtn: $('policyGbnBtn'),
+  policySrBtn: $('policySrBtn'),
+  sequenceBitsInput: $('sequenceBitsInput'),
+  sequenceBitsVal: $('sequenceBitsVal'),
   packetCountInput: $('packetCountInput'),
   packetCountVal: $('packetCountVal'),
   timeoutInput: $('timeoutInput'),
   timeoutVal: $('timeoutVal'),
+  propDelayInput: $('propDelayInput'),
+  propDelayVal: $('propDelayVal'),
+  rttHint: $('rttHint'),
   speedInput: $('speedInput'),
   speedVal: $('speedVal'),
   randomLossInput: $('randomLossInput'),
@@ -70,6 +78,7 @@ const els = {
   channel: $('channel'),
   timerBar: $('timerBar'),
   timerBaseSeq: $('timerBaseSeq'),
+  timerPolicyTag: $('timerPolicyTag'),
   timerFill: $('timerFill'),
 
   stats: {
@@ -189,11 +198,31 @@ function render(state) {
 
   if (state.window.timerActive) {
     els.timerBar.hidden = false;
-    els.timerBaseSeq.textContent = state.window.base;
+    els.timerBaseSeq.textContent = state.window.timerSeq;
+    els.timerPolicyTag.textContent =
+      state.config.policy === 'sr' ? ` (Selective Repeat · ${state.activeTimerCount} timers activos)` : '';
     els.timerFill.style.width = `${Math.round(state.window.timerProgress * 100)}%`;
   } else {
     els.timerBar.hidden = true;
   }
+
+  els.policyGbnBtn.classList.toggle('is-active', state.config.policy === 'gbn');
+  els.policySrBtn.classList.toggle('is-active', state.config.policy === 'sr');
+
+  els.windowSizeInput.max = state.maxWindowSize;
+  if (Number(els.windowSizeInput.value) !== state.window.size) {
+    els.windowSizeInput.value = state.window.size;
+  }
+  els.windowSizeVal.textContent = state.window.size;
+
+  const range = 2 ** state.config.sequenceBits;
+  const policyLabel = state.config.policy === 'sr' ? 'Selective Repeat' : 'Go-Back-N';
+  els.windowLimitHint.textContent = `Rango 0..${range - 1} · ventana máxima con ${policyLabel}: ${state.maxWindowSize}`;
+  els.windowLimitHint.classList.toggle('hint--warn', state.window.size >= state.maxWindowSize);
+
+  const rttMs = state.config.propagationDelayMs * 2;
+  els.rttHint.textContent = `RTT estimado (ida + vuelta): ${(rttMs / 1000).toFixed(1)}s`;
+  els.rttHint.classList.toggle('hint--warn', rttMs > state.config.timeoutMs);
 
   const packet = selectedSeq !== null ? state.packets.find((p) => p.seq === selectedSeq) : null;
   const inWindow = packet ? selectedSeq >= state.window.base && selectedSeq < state.window.base + state.window.size : false;
@@ -284,8 +313,26 @@ function setMode(mode) {
 
 els.windowSizeInput.addEventListener('input', (e) => {
   const val = Number(e.target.value);
-  els.windowSizeVal.textContent = val;
-  sim.setWindowSize(val);
+  const applied = sim.setWindowSize(val); // puede venir recortado por la política/bits
+  els.windowSizeVal.textContent = applied;
+  if (applied !== val) e.target.value = applied;
+});
+
+els.policyGbnBtn.addEventListener('click', () => setPolicy('gbn'));
+els.policySrBtn.addEventListener('click', () => setPolicy('sr'));
+function setPolicy(policy) {
+  selectedSeq = null;
+  sim.setPolicy(policy);
+  render(sim.getState());
+  renderTimeline(els.timelineList, sim.timeline.events);
+}
+
+els.sequenceBitsInput.addEventListener('change', (e) => {
+  const bits = Number(e.target.value);
+  els.sequenceBitsVal.textContent = bits;
+  sim.setSequenceBits(bits);
+  els.windowSizeInput.value = sim.config.windowSize;
+  els.windowSizeVal.textContent = sim.config.windowSize;
 });
 
 els.packetCountInput.addEventListener('input', (e) => {
@@ -302,6 +349,12 @@ els.timeoutInput.addEventListener('input', (e) => {
   const ms = Number(e.target.value);
   els.timeoutVal.textContent = `${(ms / 1000).toFixed(1)}s`;
   sim.setTimeout(ms);
+});
+
+els.propDelayInput.addEventListener('input', (e) => {
+  const ms = Number(e.target.value);
+  els.propDelayVal.textContent = `${(ms / 1000).toFixed(1)}s`;
+  sim.setPropagationDelay(ms);
 });
 
 els.speedInput.addEventListener('input', (e) => {

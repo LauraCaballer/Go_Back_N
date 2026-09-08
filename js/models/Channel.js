@@ -38,14 +38,14 @@ export class Channel {
     return item;
   }
 
-  sendData(packet, { speedMultiplier = 1 } = {}) {
+  sendData(packet) {
     const item = {
       id: `pkt-${packet.seq}-${++uid}`,
       kind: 'data',
       seq: packet.seq,
       direction: 'down', // sender -> receiver
       progress: 0,
-      durationMs: this.baseDurationMs / speedMultiplier,
+      durationMs: this.baseDurationMs, // retardo de propagación puro, no se mezcla con la velocidad de reproducción
       arrived: false,
       lost: false,
       createdAt: performance.now()
@@ -53,14 +53,14 @@ export class Channel {
     return this._push(item);
   }
 
-  sendAck(ackNum, { speedMultiplier = 1, duplicate = false } = {}) {
+  sendAck(ackNum, { duplicate = false } = {}) {
     const item = {
       id: `ack-${ackNum}-${++uid}`,
       kind: 'ack',
       seq: ackNum,
       direction: 'up', // receiver -> sender
       progress: 0,
-      durationMs: this.baseDurationMs / speedMultiplier,
+      durationMs: this.baseDurationMs,
       arrived: false,
       lost: false,
       duplicate,

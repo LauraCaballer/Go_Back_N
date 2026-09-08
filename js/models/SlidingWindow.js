@@ -38,6 +38,27 @@ export class SlidingWindow {
     if (ackNum + 1 > this.base) this.base = ackNum + 1;
   }
 
+  // Selective Repeat: la base solo avanza mientras haya una racha CONTIGUA
+  // de paquetes ya confirmados empezando justo en `base` (a diferencia de
+  // Go-Back-N, un ACK individual no mueve la base si el paquete `base`
+  // en sí sigue sin confirmar). `isAcked(seq)` es un predicado que consulta
+  // el estado real del paquete.
+  advanceBaseWhileAcked(isAcked) {
+    while (this.base < this.nextSeqNum && isAcked(this.base)) {
+      this.base += 1;
+    }
+  }
+
+  // Máximo de secuencia distinguible dado el número de bits `m` (rango
+  // 0..2^m - 1). Go-Back-N puede usar ventanas de hasta 2^m - 1; Selective
+  // Repeat, al no ser acumulativo, necesita la mitad como máximo o el
+  // receptor no puede distinguir un paquete nuevo de uno viejo reenviado
+  // con el número de secuencia envuelto (wrap-around).
+  static maxWindowSize(policy, sequenceBits) {
+    const range = 2 ** sequenceBits;
+    return policy === 'sr' ? Math.floor(range / 2) : range - 1;
+  }
+
   isFinished() {
     return this.base >= this.totalPackets;
   }

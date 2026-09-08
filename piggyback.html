@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Piggybacking · Conversación full-duplex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="topbar__mark">GBN</span>
+      <div class="topbar__titles">
+        <h1>Piggybacking <span class="topbar__divider">/</span> Conversación full-duplex</h1>
+        <p>Dos estaciones hablan al mismo tiempo — cada ACK viaja montado en el próximo dato, o solo si no hay nada que mandar.</p>
+      </div>
+    </div>
+
+    <div class="topbar__transport">
+      <nav class="mode-tabs" aria-label="Modo del simulador">
+        <a class="mode-tabs__link" href="index.html">Envío simple</a>
+        <a class="mode-tabs__link is-active" href="piggyback.html">Conversación (Piggybacking)</a>
+      </nav>
+      <div class="duplex-toggle" role="group" aria-label="Modo de comunicación">
+        <button class="duplex-toggle__btn is-active" data-mode="full" id="modeFullBtn">Full Duplex</button>
+        <button class="duplex-toggle__btn" data-mode="half" id="modeHalfBtn">Half Duplex</button>
+      </div>
+      <div class="transport-controls">
+        <button class="btn btn--primary" id="startBtn" title="Iniciar / reanudar">▶ Iniciar</button>
+        <button class="btn" id="pauseBtn" title="Pausar">⏸ Pausar</button>
+        <button class="btn btn--ghost" id="resetBtn" title="Reiniciar todo">↻ Reiniciar</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ SIDEBAR: CONFIG ============ -->
+    <aside class="sidebar">
+      <section class="panel">
+        <h2 class="panel__title">Configuración</h2>
+
+        <label class="field field--row">
+          <span class="field__label">Política ARQ</span>
+          <div class="duplex-toggle" role="group" aria-label="Política de retransmisión">
+            <button class="duplex-toggle__btn is-active" data-policy="gbn" id="policyGbnBtn">Go-Back-N</button>
+            <button class="duplex-toggle__btn" data-policy="sr" id="policySrBtn">Selective Repeat</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Bits de secuencia (m) <b id="sequenceBitsVal">3</b></span>
+          <input type="range" id="sequenceBitsInput" min="2" max="5" step="1" value="3" />
+        </label>
+        <p class="hint" id="windowLimitHint">Rango 0..7 · ventana máxima con Go-Back-N: 7</p>
+
+        <label class="field">
+          <span class="field__label">Tamaño de ventana (cada estación) <b id="windowSizeVal">4</b></span>
+          <input type="range" id="windowSizeInput" min="1" max="10" step="1" value="4" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Paquetes por estación <b id="packetCountVal">6</b></span>
+          <input type="range" id="packetCountInput" min="1" max="10" step="1" value="6" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Timeout <b id="timeoutVal">7.5s</b></span>
+          <input type="range" id="timeoutInput" min="1000" max="8000" step="250" value="7500" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Retardo de propagación (1 sentido) <b id="propDelayVal">2.0s</b></span>
+          <input type="range" id="propDelayInput" min="250" max="4000" step="250" value="2000" />
+        </label>
+        <p class="hint" id="rttHint">RTT estimado (ida + vuelta): 4.0s</p>
+
+        <label class="field">
+          <span class="field__label">Espera para piggyback <b id="ackHoldVal">0.9s</b></span>
+          <input type="range" id="ackHoldInput" min="100" max="3000" step="100" value="900" />
+        </label>
+        <p class="hint">Si una estación no tiene dato propio para montar el ACK en este tiempo, lo manda solo (naked ACK).</p>
+
+        <label class="field">
+          <span class="field__label">Velocidad de reproducción <b id="speedVal">0.75×</b></span>
+          <input type="range" id="speedInput" min="0.25" max="3" step="0.25" value="0.75" />
+        </label>
+
+        <label class="field field--switch">
+          <span class="field__label">Pérdida aleatoria</span>
+          <input type="checkbox" id="randomLossInput" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+
+        <label class="field" id="randomLossRateField" hidden>
+          <span class="field__label">Probabilidad de pérdida <b id="randomLossRateVal">15%</b></span>
+          <input type="range" id="randomLossRateInput" min="5" max="50" step="5" value="15" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__title">Estadísticas</h2>
+        <div class="control-grid" style="grid-template-columns: 1fr 1fr; gap: 6px;">
+          <div class="stat"><span class="stat__value" id="statSentA">0</span><span class="stat__label">Enviados A</span></div>
+          <div class="stat"><span class="stat__value" id="statSentB">0</span><span class="stat__label">Enviados B</span></div>
+          <div class="stat"><span class="stat__value" id="statReceived">0</span><span class="stat__label">Recibidos</span></div>
+          <div class="stat"><span class="stat__value" id="statLost">0</span><span class="stat__label">Perdidos</span></div>
+          <div class="stat"><span class="stat__value" id="statTimeouts">0</span><span class="stat__label">Timeouts</span></div>
+          <div class="stat"><span class="stat__value" id="statAcksPiggybacked">0</span><span class="stat__label">ACK montados</span></div>
+          <div class="stat"><span class="stat__value" id="statAcksNaked">0</span><span class="stat__label">ACK solos</span></div>
+          <div class="stat stat--accent"><span class="stat__value" id="statPiggybackRate">0%</span><span class="stat__label">% piggyback</span></div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ============ MAIN: SIMULATION STAGE ============ -->
+    <main class="stage">
+
+      <!-- ============ ESTACIÓN A ============ -->
+      <section class="node station-panel">
+        <div class="node__label">
+          <span class="node__tag">ESTACIÓN A</span>
+          <span class="node__meta">
+            Base = <b id="baseValA">0</b> · NextSeqNum = <b id="nextSeqValA">0</b> · Window = <b id="windowValA">4</b>
+            · Esperando <b id="expectedValA">Packet 0</b> de B
+          </span>
+        </div>
+        <div class="window-frame" id="windowFrameA"></div>
+        <div class="packet-track" id="trackA" aria-label="Paquetes salientes de A"></div>
+        <div class="timer-bar" id="timerBarA" hidden>
+          <span class="timer-bar__label">Timeout A: Packet <b id="timerSeqA">0</b></span>
+          <div class="timer-bar__track"><div class="timer-bar__fill" id="timerFillA"></div></div>
+        </div>
+        <div class="control-grid" style="margin-top: 10px;">
+          <button class="btn" id="sendNextABtn">Enviar siguiente (A)</button>
+          <button class="btn btn--toggle" id="autoSendABtn">Auto (A)</button>
+          <button class="btn btn--warn" id="loseNextABtn">Perder próximo de A</button>
+          <button class="btn btn--danger" id="forceTimeoutABtn">Forzar timeout (A)</button>
+        </div>
+        <span class="ack-badge" id="ackBadgeA" hidden></span>
+      </section>
+
+      <!-- ============ CANAL DÚPLEX ============ -->
+      <section class="channel" id="channel" aria-label="Canal de comunicación">
+        <div class="channel__rail channel__rail--down">
+          <span class="channel__rail-label">A → B</span>
+        </div>
+        <div class="channel__rail channel__rail--up">
+          <span class="channel__rail-label">B → A</span>
+        </div>
+      </section>
+
+      <!-- ============ ESTACIÓN B ============ -->
+      <section class="node station-panel">
+        <div class="node__label">
+          <span class="node__tag">ESTACIÓN B</span>
+          <span class="node__meta">
+            Base = <b id="baseValB">0</b> · NextSeqNum = <b id="nextSeqValB">0</b> · Window = <b id="windowValB">4</b>
+            · Esperando <b id="expectedValB">Packet 0</b> de A
+          </span>
+        </div>
+        <div class="window-frame" id="windowFrameB"></div>
+        <div class="packet-track" id="trackB" aria-label="Paquetes salientes de B"></div>
+        <div class="timer-bar" id="timerBarB" hidden>
+          <span class="timer-bar__label">Timeout B: Packet <b id="timerSeqB">0</b></span>
+          <div class="timer-bar__track"><div class="timer-bar__fill" id="timerFillB"></div></div>
+        </div>
+        <div class="control-grid" style="margin-top: 10px;">
+          <button class="btn" id="sendNextBBtn">Enviar siguiente (B)</button>
+          <button class="btn btn--toggle" id="autoSendBBtn">Auto (B)</button>
+          <button class="btn btn--warn" id="loseNextBBtn">Perder próximo de B</button>
+          <button class="btn btn--danger" id="forceTimeoutBBtn">Forzar timeout (B)</button>
+        </div>
+        <span class="ack-badge" id="ackBadgeB" hidden></span>
+      </section>
+
+      <!-- ============ TIMELINE ============ -->
+      <section class="timeline" aria-label="Línea de tiempo de eventos">
+        <div class="timeline__header">
+          <h2>Línea de tiempo</h2>
+          <span class="timeline__clock" id="clockDisplay">00:00</span>
+        </div>
+        <ol class="timeline__list" id="timelineList"></ol>
+      </section>
+
+      <footer class="legend" aria-label="Leyenda de estados">
+        <span class="legend__item"><i class="dot dot--waiting"></i>Esperando</span>
+        <span class="legend__item"><i class="dot dot--sent"></i>Enviado</span>
+        <span class="legend__item"><i class="dot dot--transit"></i>En tránsito</span>
+        <span class="legend__item"><i class="dot dot--received"></i>Recibido</span>
+        <span class="legend__item"><i class="dot dot--acked"></i>ACK recibido</span>
+        <span class="legend__item"><i class="dot dot--lost"></i>Perdido</span>
+        <span class="legend__item"><i class="dot dot--outoforder"></i>Fuera de orden</span>
+        <span class="legend__item"><i class="dot dot--retransmitted"></i>Retransmitido</span>
+      </footer>
+
+      <p class="hint" style="margin-top: 4px;">
+        Pastilla con borde degradado = paquete + ACK montados juntos (piggyback). Pastilla punteada de solo texto "ACK" = ACK puro (naked), viajó solo porque se acabó la espera. Haz clic en cualquier ítem del canal para perderlo a propósito.
+      </p>
+
+    </main>
+
+    <!-- ============ DIAGRAMA EN TIEMPO REAL (tercera columna) ============ -->
+    <aside class="gbn-diagram gbn-diagram--sidebar">
+      <h2 class="gbn-diagram__title">Línea de tiempo A ↔ B</h2>
+      <div class="gbn-diagram__container">
+        <span class="gbn-diagram__sender">A</span>
+        <span class="gbn-diagram__receiver">B</span>
+        <svg id="pbSvg" class="gbn-diagram__svg"></svg>
+      </div>
+      <p class="hint">
+        <span style="color:var(--diagram-gray)">■</span> Solo A ·
+        <span style="color:var(--accent-teal)">■</span> Solo B ·
+        doble línea clara = dato + ACK montado ·
+        <span style="color:var(--diagram-dark)">■</span> ACK puro ·
+        entrecortada = se pierde
+      </p>
+    </aside>
+
+  </div>
+
+</div>
+
+<script type="module" src="js/piggyback-main.js"></script>
+</body>
+</html>

@@ -1,20 +1,29 @@
-// Sender.js — the GBN sending side.
-// Owns the packet array + sliding window, decides what can be sent,
-// runs the single retransmission timer bound to `base`, and applies
-// cumulative ACKs.
+// Sender.js — el lado emisor. Soporta dos políticas ARQ:
+//   'gbn' (Go-Back-N): UN solo temporizador atado a `base`. Al vencer,
+//     se retransmite TODO el rango base..nextSeqNum-1.
+//   'sr'  (Selective Repeat): un temporizador INDEPENDIENTE por cada
+//     paquete enviado y aún sin confirmar. Al vencer uno, se retransmite
+//     SOLO ese paquete — los demás siguen su propio reloj sin verse
+//     afectados.
 
 import { Packet } from './Packet.js';
 import { SlidingWindow } from './SlidingWindow.js';
 
 export class Sender {
-  constructor({ totalPackets, windowSize, timeoutMs, onEvent }) {
+  constructor({ totalPackets, windowSize, timeoutMs, policy = 'gbn', onEvent }) {
     this.totalPackets = totalPackets;
+    this.policy = policy; // 'gbn' | 'sr'
     this.window = new SlidingWindow(windowSize, totalPackets);
     this.timeoutMs = timeoutMs;
     this.onEvent = onEvent || (() => {});
     this.packets = this._buildPackets(totalPackets);
-    this.timerElapsed = 0;   // ms elapsed on the current base timer
+
+    // Go-Back-N: un solo timer atado a la base.
+    this.timerElapsed = 0;
     this.timerActive = false;
+
+    // Selective Repeat: un timer por paquete en vuelo. Map<seq, elapsedMs>.
+    this.timers = new Map();
   }
 
   _buildPackets(total) {
@@ -26,6 +35,7 @@ export class Sender {
     this.packets = this._buildPackets(total);
     this.window.setTotalPackets(total);
     this.stopTimer();
+    this.timers.clear();
   }
 
   setWindowSize(size) {
@@ -34,6 +44,12 @@ export class Sender {
 
   setTimeout(ms) {
     this.timeoutMs = ms;
+  }
+
+  setPolicy(policy) {
+    this.policy = policy;
+    this.stopTimer();
+    this.timers.clear();
   }
 
   // ---- sending -----------------------------------------------------
@@ -51,7 +67,12 @@ export class Sender {
     const packet = this.packets[seq];
     packet.markSent();
     this.window.advanceNext();
-    if (!this.timerActive) this.startTimer();
+    if (this.policy === 'gbn') {
+      if (!this.timerActive) this.startTimer();
+    } else {
+      // SR: este paquete arranca su propio reloj de retransmisión.
+      this.timers.set(seq, 0);
+    }
     this.onEvent('data-sent', { seq, attempts: packet.attempts });
   }
 
@@ -59,7 +80,7 @@ export class Sender {
     this.packets[seq].markInTransit();
   }
 
-  // ---- timer ---------------------------------------------------------
+  // ---- timer (Go-Back-N: un solo timer atado a la base) ----------------
 
   startTimer() {
     this.timerActive = true;
@@ -71,7 +92,6 @@ export class Sender {
     this.timerElapsed = 0;
   }
 
-  // Advance the base timer by dtMs; returns true if a timeout fired.
   tickTimer(dtMs) {
     if (!this.timerActive) return false;
     this.timerElapsed += dtMs;
@@ -87,7 +107,48 @@ export class Sender {
     return Math.min(1, this.timerElapsed / this.timeoutMs);
   }
 
+  // ---- timers (Selective Repeat: uno por paquete) -----------------------
+
+  // Avanza todos los timers activos (SR) o el único timer (GBN) según la
+  // política. Devuelve la lista de números de secuencia que vencieron.
+  advanceTimers(dtMs) {
+    if (this.policy === 'gbn') {
+      if (this.tickTimer(dtMs)) {
+        return this.packetsToRetransmit().map((p) => p.seq);
+      }
+      return [];
+    }
+
+    const expired = [];
+    for (const [seq, elapsed] of this.timers) {
+      const next = elapsed + dtMs;
+      if (next >= this.timeoutMs) {
+        expired.push(seq);
+      } else {
+        this.timers.set(seq, next);
+      }
+    }
+    return expired;
+  }
+
+  // Progreso [0,1] del timer más próximo a vencer. Útil para pintar UNA
+  // sola barra representativa en SR (aunque haya varios timers a la vez).
+  soonestTimerProgress() {
+    if (this.policy === 'gbn') return this.timerProgress();
+    if (this.timers.size === 0) return { active: false, progress: 0, seq: null };
+    let bestSeq = null;
+    let bestElapsed = -Infinity;
+    for (const [seq, elapsed] of this.timers) {
+      if (elapsed > bestElapsed) {
+        bestElapsed = elapsed;
+        bestSeq = seq;
+      }
+    }
+    return { active: true, progress: Math.min(1, bestElapsed / this.timeoutMs), seq: bestSeq };
+  }
+
   // Packets that must be retransmitted right now: base .. nextSeqNum-1.
+  // (Solo tiene sentido en Go-Back-N: en SR cada paquete se maneja aparte.)
   packetsToRetransmit() {
     const list = [];
     for (let s = this.window.base; s < this.window.nextSeqNum; s++) {
@@ -96,6 +157,7 @@ export class Sender {
     return list;
   }
 
+  // Go-Back-N: vence el timer de la base -> se reenvía toda la ventana.
   onTimeout() {
     const range = this.packetsToRetransmit();
 
@@ -110,13 +172,30 @@ export class Sender {
     }
 
     return range;
-}
+  }
+
+  // Selective Repeat: vence el timer de UN paquete específico -> se
+  // reinicia solo ese timer y se retransmite solo ese paquete.
+  onTimeoutSR(seq) {
+    this.onEvent('timeout-sr', { seq });
+    if (this.packets[seq] && this.packets[seq].status !== 'acked') {
+      this.timers.set(seq, 0); // reinicia su propio reloj
+      return this.packets[seq];
+    }
+    this.timers.delete(seq);
+    return null;
+  }
 
   // ---- ACK handling ----------------------------------------------------
 
   handleAck(ackNum) {
+    if (this.policy === 'gbn') return this._handleAckCumulative(ackNum);
+    return this._handleAckSelective(ackNum);
+  }
+
+  // Go-Back-N: ACK n confirma TODO hasta n inclusive; la base salta directo.
+  _handleAckCumulative(ackNum) {
     if (ackNum < this.window.base) {
-      // Duplicate / stale ACK — window doesn't move.
       this.onEvent('ack-stale', { ackNum, base: this.window.base });
       return { moved: false };
     }
@@ -130,9 +209,29 @@ export class Sender {
     if (this.window.base >= this.window.nextSeqNum) {
       this.stopTimer();
     } else {
-      // Still unacked packets outstanding — restart the timer for the new base.
       this.startTimer();
     }
+    return { moved: this.window.base !== previousBase };
+  }
+
+  // Selective Repeat: ACK n confirma SOLO el paquete n. La base únicamente
+  // avanza si hay una racha contigua ya confirmada empezando en `base`
+  // (si `base` sigue sin confirmar, la ventana no se mueve aunque paquetes
+  // más adelante ya estén acked).
+  _handleAckSelective(ackNum) {
+    const packet = this.packets[ackNum];
+    if (!packet || packet.status === 'acked' || ackNum < this.window.base) {
+      this.onEvent('ack-stale', { ackNum, base: this.window.base });
+      return { moved: false };
+    }
+
+    packet.markAcked();
+    this.timers.delete(ackNum);
+
+    const previousBase = this.window.base;
+    this.window.advanceBaseWhileAcked((seq) => this.packets[seq]?.status === 'acked');
+
+    this.onEvent('ack-applied', { ackNum, newBase: this.window.base });
     return { moved: this.window.base !== previousBase };
   }
 
@@ -145,5 +244,6 @@ export class Sender {
     this.packets = this._buildPackets(totalPackets);
     this.window = new SlidingWindow(windowSize, totalPackets);
     this.stopTimer();
+    this.timers.clear();
   }
 }

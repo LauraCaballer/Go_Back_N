@@ -8,6 +8,7 @@ import { Channel } from './models/Channel.js';
 import { Timeline } from './services/Timeline.js';
 import { Statistics } from './services/Statistics.js';
 import { PacketStatus } from './models/Packet.js';
+import { SlidingWindow } from './models/SlidingWindow.js';
 
 const TICK_MS = 50; // logic-loop resolution
 
@@ -19,12 +20,17 @@ export class Simulation {
       windowSize: 4,
       timeoutMs: 7500,
       mode: 'full',        // 'full' | 'half'
-      speedMultiplier: 1,
-      channelDurationMs: 2000,
+      policy: 'gbn',        // 'gbn' | 'sr' — política ARQ
+      sequenceBits: 3,      // bits del número de secuencia (rango = 2^bits)
+      speedMultiplier: 1,     // "cámara lenta/rápida": escala el reloj virtual completo por igual (timers Y canal), no cambia la relación RTT/timeout
+      propagationDelayMs: 2000, // retardo de propagación de UN solo sentido, en ms virtuales. RTT aproximado (full-duplex) = 2 × esto
       randomLossEnabled: false,
       randomLossRate: 0.75,
       ...config
     };
+    // La ventana pedida por el usuario puede exceder el máximo permitido
+    // por la política + bits de secuencia; se clampa al construir.
+    this.config.windowSize = this._clampWindowSize(this.config.windowSize);
 
     this.clockMs = 0;
     this.running = false;
@@ -41,8 +47,18 @@ export class Simulation {
     this._intervalHandle = null;
   }
 
+  // ---- validación de ventana (regla clásica de ARQ) ---------------------
+
+  maxWindowSize() {
+    return SlidingWindow.maxWindowSize(this.config.policy, this.config.sequenceBits);
+  }
+
+  _clampWindowSize(size) {
+    return Math.max(1, Math.min(size, this.maxWindowSize()));
+  }
+
   _buildModels() {
-    const { totalPackets, windowSize, timeoutMs, mode, channelDurationMs } = this.config;
+    const { totalPackets, windowSize, timeoutMs, mode, propagationDelayMs, policy } = this.config;
 
     this.timeline = new Timeline({
       onChange: (event) => this.hooks.onTimelineEvent && this.hooks.onTimelineEvent(event)
@@ -52,16 +68,19 @@ export class Simulation {
       onChange: (stats) => this.hooks.onStatsChange && this.hooks.onStatsChange(stats)
     });
 
-    this.channel = new Channel({ mode, baseDurationMs: channelDurationMs });
+    this.channel = new Channel({ mode, baseDurationMs: propagationDelayMs });
 
     this.sender = new Sender({
       totalPackets,
       windowSize,
       timeoutMs,
+      policy,
       onEvent: (type, data) => this._onSenderEvent(type, data)
     });
 
     this.receiver = new Receiver({
+      policy,
+      windowSize,
       onEvent: (type, data) => this._onReceiverEvent(type, data)
     });
   }
@@ -123,8 +142,58 @@ pause() {
   // ---- config setters (safe to call mid-run) ----------------------------
 
   setWindowSize(size) {
-    this.config.windowSize = size;
-    this.sender.setWindowSize(size);
+    const clamped = this._clampWindowSize(size);
+    this.config.windowSize = clamped;
+    this.sender.setWindowSize(clamped);
+    this.receiver.setWindowSize(clamped);
+    if (clamped !== size) {
+      this.timeline.add(
+        this.clockMs,
+        'info',
+        null,
+        `⚠️ Ventana limitada a ${clamped} (máximo permitido con ${this.config.sequenceBits} bits de secuencia en ${this.config.policy === 'sr' ? 'Selective Repeat' : 'Go-Back-N'})`
+      );
+    }
+    this._emitTick();
+    return clamped;
+  }
+
+  // Cambiar de política ARQ reinicia la simulación: Go-Back-N y Selective
+  // Repeat manejan timers, ACKs y buffers de forma incompatible entre sí,
+  // así que no tiene sentido intentar "migrar" el estado a mitad de envío.
+  setPolicy(policy) {
+    this.pause();
+    this.config.policy = policy;
+    this.config.windowSize = this._clampWindowSize(this.config.windowSize);
+    this.clockMs = 0;
+    this.channel.clear();
+    this.pendingManualLoss.clear();
+    this.pendingRetransmissions = [];
+    this._buildModels();
+    this.statistics.reset();
+    this.timeline.reset();
+    this.finished = false;
+    this.timeline.add(
+      0,
+      'info',
+      null,
+      `Política cambiada a ${policy === 'sr' ? 'Selective Repeat (ACK selectivo, un timer por paquete)' : 'Go-Back-N (ACK acumulativo, un solo timer)'}`
+    );
+    this._emitTick();
+  }
+
+  setSequenceBits(bits) {
+    this.pause();
+    this.config.sequenceBits = bits;
+    this.config.windowSize = this._clampWindowSize(this.config.windowSize);
+    this.sender.setWindowSize(this.config.windowSize);
+    this.receiver.setWindowSize(this.config.windowSize);
+    this.timeline.add(
+      this.clockMs,
+      'info',
+      null,
+      `Bits de secuencia = ${bits} (rango 0..${2 ** bits - 1}) — ventana máx. ${this.maxWindowSize()}`
+    );
     this._emitTick();
   }
 
@@ -152,10 +221,37 @@ pause() {
   setTimeout(ms) {
     this.config.timeoutMs = ms;
     this.sender.setTimeout(ms);
+    const rtt = this.config.propagationDelayMs * 2;
+    if (rtt > ms) {
+      this.timeline.add(
+        this.clockMs,
+        'info',
+        null,
+        `⚠️ Timeout (${ms}ms) por debajo del RTT estimado (${rtt}ms): habrá retransmisiones aunque nada se pierda`
+      );
+    }
   }
 
   setSpeed(multiplier) {
+    // Cámara lenta/rápida: NO cambia el RTT ni el timeout en términos
+    // relativos entre sí, solo qué tan rápido los ves transcurrir en
+    // tiempo real. Se aplica de forma uniforme sobre dt en _tick().
     this.config.speedMultiplier = multiplier;
+  }
+
+  setPropagationDelay(ms) {
+    this.config.propagationDelayMs = ms;
+    this.channel.setBaseDuration(ms);
+    const rtt = ms * 2;
+    if (rtt > this.config.timeoutMs) {
+      this.timeline.add(
+        this.clockMs,
+        'info',
+        null,
+        `⚠️ RTT estimado (${rtt}ms) supera el timeout (${this.config.timeoutMs}ms): habrá retransmisiones aunque nada se pierda`
+      );
+    }
+    this._emitTick();
   }
 
   toggleRandomLoss(enabled) {
@@ -205,17 +301,34 @@ pause() {
   }
 
   forceTimeout() {
-    if (this.sender.window.base >= this.sender.window.nextSeqNum) return false;
-    this.sender.stopTimer();
-    const range = this.sender.onTimeout();
+    if (this.config.policy === 'gbn') {
+      if (this.sender.window.base >= this.sender.window.nextSeqNum) return false;
+      this.sender.stopTimer();
+      const range = this.sender.onTimeout();
+      this.statistics.recordTimeout();
+      this.timeline.add(
+        this.clockMs,
+        'timeout',
+        null,
+        `Timeout forzado de Packet ${this.sender.window.base} — retransmitiendo hasta ${this.sender.window.nextSeqNum - 1}`
+      );
+      range.forEach((packet) => this._retransmit(packet.seq));
+      this._emitTick();
+      return true;
+    }
+
+    // Selective Repeat: fuerza solo el timer más próximo a vencer.
+    const { active, seq } = this.sender.soonestTimerProgress();
+    if (!active || seq === null) return false;
+    const packet = this.sender.onTimeoutSR(seq);
     this.statistics.recordTimeout();
     this.timeline.add(
       this.clockMs,
       'timeout',
-      null,
-      `Timeout forzado de Packet ${this.sender.window.base} — retransmitiendo hasta ${this.sender.window.nextSeqNum - 1}`
+      seq,
+      `Timeout forzado de Packet ${seq} (Selective Repeat) — se retransmite solo ese paquete`
     );
-    range.forEach((packet) => this._retransmit(packet.seq));
+    if (packet) this._retransmit(seq);
     this._emitTick();
     return true;
   }
@@ -239,7 +352,7 @@ pause() {
       willBeLost = true;
     }
 
-    const item = this.channel.sendData(packet, { speedMultiplier: this.config.speedMultiplier });
+    const item = this.channel.sendData(packet);
     item.willBeLost = willBeLost;
 
     this.sender.registerSent(seq);
@@ -269,7 +382,7 @@ pause() {
     } else if (this.config.randomLossEnabled && Math.random() < this.config.randomLossRate) {
       willBeLost = true;
     }
-    const item = this.channel.sendData(packet, { speedMultiplier: this.config.speedMultiplier });
+    const item = this.channel.sendData(packet);
     item.willBeLost = willBeLost;
     packet.markSent();
     packet.status = PacketStatus.RETRANSMITTED;
@@ -297,14 +410,10 @@ pause() {
   }
 
   _onReceiverEvent(type, data) {
-    if (type === 'packet-discarded') {
-      this.timeline.add(
-        this.clockMs,
-        'discard',
-        data.seq,
-        `Receptor recibe Packet ${data.seq} fuera de orden (esperaba ${data.expected}) y lo descarta`
-      );
-    }
+    // Los eventos 'packet-discarded' / 'packet-accepted' / 'packet-duplicate'
+    // ya se registran directamente en _handleDataArrival, con el detalle
+    // correcto según la política (GBN vs SR). Este hook queda disponible
+    // para instrumentación futura sin duplicar entradas en la línea de tiempo.
   }
 
   // ---- main loop -----------------------------------------------------
@@ -363,31 +472,44 @@ pause() {
     // Retransmisiones Go-Back-N escalonadas.
     this._processRetransmissions(dt);
 
-    if (this.sender.tickTimer(dt)) {
-  this.statistics.recordTimeout();
+    const expiredSeqs = this.sender.advanceTimers(dt);
+    if (expiredSeqs.length > 0) {
+      if (this.config.policy === 'gbn') {
+        this.statistics.recordTimeout();
 
-  const base = this.sender.window.base;
-  const upTo = this.sender.window.nextSeqNum - 1;
+        const base = this.sender.window.base;
+        const upTo = this.sender.window.nextSeqNum - 1;
+        const range = this.sender.onTimeout(); // reinicia el timer único de la base
 
-  const range = this.sender.onTimeout();
+        this.timeline.add(
+          this.clockMs,
+          'timeout',
+          null,
+          `Timeout de Packet ${base} — retransmitiendo hasta ${upTo}`
+        );
 
-  this.timeline.add(
-    this.clockMs,
-    'timeout',
-    null,
-    `Timeout de Packet ${base} — retransmitiendo hasta ${upTo}`
-  );
-
-  // Cancelar cualquier cola anterior.
-  this.pendingRetransmissions = [];
-
-  // Programar las retransmisiones una por una.
-  range.forEach((packet) => {
-    this.pendingRetransmissions.push(packet.seq);
-  });
-
-  this.retransmissionTimerMs = 0;
-}
+        // Cancelar cualquier cola anterior (GBN reemplaza todo el rango).
+        this.pendingRetransmissions = [];
+        range.forEach((packet) => {
+          this.pendingRetransmissions.push(packet.seq);
+        });
+        this.retransmissionTimerMs = 0;
+      } else {
+        // Selective Repeat: cada paquete vencido se retransmite de forma
+        // INDEPENDIENTE — no se tocan los timers de los demás paquetes.
+        expiredSeqs.forEach((seq) => {
+          this.statistics.recordTimeout();
+          const packet = this.sender.onTimeoutSR(seq);
+          this.timeline.add(
+            this.clockMs,
+            'timeout',
+            seq,
+            `Timeout de Packet ${seq} (Selective Repeat) — se retransmite solo ese paquete`
+          );
+          if (packet) this.pendingRetransmissions.push(seq);
+        });
+      }
+    }
 
     if (this.sender.isFinished() && !this.finished) {
       this.finished = true;
@@ -402,28 +524,51 @@ pause() {
     this.channel.remove(item.id);
     const packet = this.sender.packets[item.seq];
     const result = this.receiver.handlePacket(item.seq);
+    const isSR = this.config.policy === 'sr';
 
     if (result.accepted) {
       packet.markReceived();
       this.statistics.recordReceived();
-      this.timeline.add(this.clockMs, 'receive', item.seq, `Receptor recibe Packet ${item.seq}`);
+      this.timeline.add(
+        this.clockMs,
+        'receive',
+        item.seq,
+        isSR
+          ? `Receptor recibe y guarda Packet ${item.seq} (dentro de la ventana de recepción)`
+          : `Receptor recibe Packet ${item.seq}`
+      );
+    } else if (isSR && result.duplicate) {
+      packet.markOutOfOrder();
+      this.timeline.add(
+        this.clockMs,
+        'discard',
+        item.seq,
+        `Receptor recibe Packet ${item.seq} duplicado (ya entregado antes) — reenvía su ACK`
+      );
     } else {
       packet.markOutOfOrder();
+      this.timeline.add(
+        this.clockMs,
+        'discard',
+        item.seq,
+        isSR
+          ? `Receptor recibe Packet ${item.seq} fuera de la ventana de recepción y lo descarta`
+          : `Receptor recibe Packet ${item.seq} fuera de orden (esperaba ${this.receiver.expectedSeqNum}) y lo descarta`
+      );
     }
 
     if (result.ackNum !== null && result.ackNum >= 0) {
-      const ackItem = this.channel.sendAck(result.ackNum, {
-        speedMultiplier: this.config.speedMultiplier,
-        duplicate: !result.accepted
-      });
+      this.channel.sendAck(result.ackNum, { duplicate: !result.accepted });
       this.statistics.recordAckSent();
       this.timeline.add(
         this.clockMs,
         'ack-sent',
         result.ackNum,
-        result.accepted
-          ? `Receptor envía ACK ${result.ackNum}`
-          : `Receptor reenvía ACK duplicado ${result.ackNum}`
+        isSR
+          ? `Receptor envía ACK selectivo ${result.ackNum} (confirma solo ese paquete)`
+          : result.accepted
+            ? `Receptor envía ACK ${result.ackNum}`
+            : `Receptor reenvía ACK duplicado ${result.ackNum}`
       );
     }
   }
@@ -432,11 +577,16 @@ pause() {
     this.channel.remove(item.id);
     this.statistics.recordAckReceived();
     const { moved } = this.sender.handleAck(item.seq);
+    const isSR = this.config.policy === 'sr';
     this.timeline.add(
       this.clockMs,
       'ack-received',
       item.seq,
-      moved ? `Emisor recibe ACK ${item.seq} — ventana avanza` : `Emisor recibe ACK ${item.seq} (duplicado)`
+      moved
+        ? `Emisor recibe ACK ${item.seq} — ventana avanza`
+        : isSR
+          ? `Emisor recibe ACK ${item.seq} (confirma ese paquete, pero la base sigue esperando uno anterior)`
+          : `Emisor recibe ACK ${item.seq} (duplicado)`
     );
   }
 
@@ -447,18 +597,28 @@ pause() {
   }
 
   getState() {
+    const isSR = this.config.policy === 'sr';
+    // Timer unificado para la UI: en GBN es el único timer de la base;
+    // en SR es el timer más próximo a vencer (puede haber varios a la vez).
+    const timerInfo = isSR
+      ? this.sender.soonestTimerProgress()
+      : { active: this.sender.timerActive, progress: this.sender.timerProgress(), seq: this.sender.window.base };
+
     return {
       clockMs: this.clockMs,
       running: this.running,
       finished: this.finished,
       autoSendEnabled: this.autoSendEnabled,
       config: { ...this.config },
+      maxWindowSize: this.maxWindowSize(),
+      activeTimerCount: isSR ? this.sender.timers.size : (this.sender.timerActive ? 1 : 0),
       window: {
         base: this.sender.window.base,
         nextSeqNum: this.sender.window.nextSeqNum,
         size: this.sender.window.size,
-        timerProgress: this.sender.timerProgress(),
-        timerActive: this.sender.timerActive
+        timerProgress: timerInfo.progress,
+        timerActive: timerInfo.active,
+        timerSeq: timerInfo.seq
       },
       packets: this.sender.packets.map((p) => ({ seq: p.seq, status: p.status, attempts: p.attempts })),
       expectedSeqNum: this.receiver.expectedSeqNum,
